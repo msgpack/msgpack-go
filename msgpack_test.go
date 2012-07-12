@@ -1,10 +1,10 @@
 package msgpack
 
 import (
-	"testing"
 	"bytes"
-	"reflect"
 	"math"
+	"reflect"
+	"testing"
 )
 
 func equal(lhs reflect.Value, rhs reflect.Value) bool {

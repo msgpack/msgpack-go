@@ -117,7 +117,6 @@ func unpackMap(reader io.Reader, nelems uint) (v reflect.Value, n int, err error
 		}
 		ktyp := k.Type()
 		if ktyp.Kind() == reflect.Slice && ktyp.Elem().Kind() == reflect.Uint8 {
-
 			retval[string(k.Interface().([]uint8))] = v.Interface()
 		} else {
 			retval[k.Interface()] = v.Interface()
