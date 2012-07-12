@@ -84,7 +84,7 @@ func TestPackBytes(t *testing.T) {
 		{"world world world world world world", []byte("\xda\x00#world world world world world world")},
 	} {
 
-                b := &bytes.Buffer{}
+		b := &bytes.Buffer{}
 
 		_, err := PackBytes(b, []byte(i.s))
 		if err != nil {
@@ -276,13 +276,13 @@ func TestPackMap(t *testing.T) {
 		t.Error("err != nil")
 	}
 
-        // map ordering is no longer deterministic -- check all possible orderings :(
+	// map ordering is no longer deterministic -- check all possible orderings :(
 	if bytes.Compare(b.Bytes(), []byte{0x83, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05}) != 0 &&
-	   bytes.Compare(b.Bytes(), []byte{0x83, 0x00, 0x01, 0x04, 0x05, 0x02, 0x03}) != 0 &&
-	   bytes.Compare(b.Bytes(), []byte{0x83, 0x02, 0x03, 0x00, 0x01, 0x04, 0x05}) != 0 &&
-	   bytes.Compare(b.Bytes(), []byte{0x83, 0x02, 0x03, 0x04, 0x05, 0x00, 0x01}) != 0 &&
-	   bytes.Compare(b.Bytes(), []byte{0x83, 0x04, 0x05, 0x00, 0x01, 0x02, 0x03}) != 0 &&
-	   bytes.Compare(b.Bytes(), []byte{0x83, 0x04, 0x05, 0x02, 0x03, 0x00, 0x01}) != 0 {
+		bytes.Compare(b.Bytes(), []byte{0x83, 0x00, 0x01, 0x04, 0x05, 0x02, 0x03}) != 0 &&
+		bytes.Compare(b.Bytes(), []byte{0x83, 0x02, 0x03, 0x00, 0x01, 0x04, 0x05}) != 0 &&
+		bytes.Compare(b.Bytes(), []byte{0x83, 0x02, 0x03, 0x04, 0x05, 0x00, 0x01}) != 0 &&
+		bytes.Compare(b.Bytes(), []byte{0x83, 0x04, 0x05, 0x00, 0x01, 0x02, 0x03}) != 0 &&
+		bytes.Compare(b.Bytes(), []byte{0x83, 0x04, 0x05, 0x02, 0x03, 0x00, 0x01}) != 0 {
 		t.Error("wrong output", b.Bytes())
 	}
 }
@@ -349,5 +349,29 @@ func TestUnpackFloat(t *testing.T) {
 				t.Errorf("%u != %u", retval.Interface(), v)
 			}
 		}
+	}
+}
+
+func TestUnpackMapWithStringKey(t *testing.T) {
+	x := map[interface{}]interface{}{"XYZ": "Hello world!"}
+	var buf bytes.Buffer
+	_, err := Pack(&buf, x)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	v, _, err := Unpack(&buf)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	kv, ok := v.Interface().(map[interface{}]interface{})["XYZ"]
+	if !ok {
+		t.Errorf("Nothing with key %q in the map", "XYZ")
+		return
+	}
+	expected := []uint8{72, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100, 33}
+	if bytes.Compare(kv.([]uint8), expected) != 0 {
+		t.Errorf("Expected %q, got %q", expected, kv)
 	}
 }
