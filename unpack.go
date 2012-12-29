@@ -7,8 +7,23 @@ import (
 	"unsafe"
 )
 
+type (
+	Bytes1 [1]byte
+	Bytes2 [2]byte
+	Bytes4 [4]byte
+	Bytes8 [8]byte
+)
+
+const (
+	NEGFIXNUM     = 0xe0
+	FIXMAPMAX     = 0x8f
+	FIXARRAYMAX   = 0x9f
+	FIXRAWMAX     = 0xbf
+	FIRSTBYTEMASK = 0xf
+)
+
 func readByte(reader io.Reader) (v uint8, err error) {
-	data := [1]byte{}
+	var data Bytes1
 	_, e := reader.Read(data[0:])
 	if e != nil {
 		return 0, e
@@ -17,7 +32,7 @@ func readByte(reader io.Reader) (v uint8, err error) {
 }
 
 func readUint16(reader io.Reader) (v uint16, n int, err error) {
-	data := [2]byte{}
+	var data Bytes2
 	n, e := reader.Read(data[0:])
 	if e != nil {
 		return 0, n, e
@@ -26,7 +41,7 @@ func readUint16(reader io.Reader) (v uint16, n int, err error) {
 }
 
 func readUint32(reader io.Reader) (v uint32, n int, err error) {
-	data := [4]byte{}
+	var data Bytes4
 	n, e := reader.Read(data[0:])
 	if e != nil {
 		return 0, n, e
@@ -35,7 +50,7 @@ func readUint32(reader io.Reader) (v uint32, n int, err error) {
 }
 
 func readUint64(reader io.Reader) (v uint64, n int, err error) {
-	data := [8]byte{}
+	var data Bytes8
 	n, e := reader.Read(data[0:])
 	if e != nil {
 		return 0, n, e
@@ -44,7 +59,7 @@ func readUint64(reader io.Reader) (v uint64, n int, err error) {
 }
 
 func readInt16(reader io.Reader) (v int16, n int, err error) {
-	data := [2]byte{}
+	var data Bytes2
 	n, e := reader.Read(data[0:])
 	if e != nil {
 		return 0, n, e
@@ -53,7 +68,7 @@ func readInt16(reader io.Reader) (v int16, n int, err error) {
 }
 
 func readInt32(reader io.Reader) (v int32, n int, err error) {
-	data := [4]byte{}
+	var data Bytes4
 	n, e := reader.Read(data[0:])
 	if e != nil {
 		return 0, n, e
@@ -62,7 +77,7 @@ func readInt32(reader io.Reader) (v int32, n int, err error) {
 }
 
 func readInt64(reader io.Reader) (v int64, n int, err error) {
-	data := [8]byte{}
+	var data Bytes8
 	n, e := reader.Read(data[0:])
 	if e != nil {
 		return 0, n, e
@@ -71,14 +86,15 @@ func readInt64(reader io.Reader) (v int64, n int, err error) {
 }
 
 func unpackArray(reader io.Reader, nelems uint) (v reflect.Value, n int, err error) {
-	retval := make([]interface{}, nelems)
-	nbytesread := 0
 	var i uint
+	var nbytesread int
+	retval := make([]interface{}, nelems)
+
 	for i = 0; i < nelems; i++ {
-		v, n, e := Unpack(reader)
+		v, n, err = Unpack(reader)
 		nbytesread += n
-		if e != nil {
-			return reflect.Value{}, nbytesread, e
+		if err != nil {
+			return reflect.Value{}, nbytesread, err
 		}
 		retval[i] = v.Interface()
 	}
@@ -86,14 +102,15 @@ func unpackArray(reader io.Reader, nelems uint) (v reflect.Value, n int, err err
 }
 
 func unpackArrayReflected(reader io.Reader, nelems uint) (v reflect.Value, n int, err error) {
-	retval := make([]reflect.Value, nelems)
-	nbytesread := 0
 	var i uint
+	var nbytesread int
+	retval := make([]reflect.Value, nelems)
+
 	for i = 0; i < nelems; i++ {
-		v, n, e := UnpackReflected(reader)
+		v, n, err = UnpackReflected(reader)
 		nbytesread += n
-		if e != nil {
-			return reflect.Value{}, nbytesread, e
+		if err != nil {
+			return reflect.Value{}, nbytesread, err
 		}
 		retval[i] = v
 	}
@@ -101,19 +118,21 @@ func unpackArrayReflected(reader io.Reader, nelems uint) (v reflect.Value, n int
 }
 
 func unpackMap(reader io.Reader, nelems uint) (v reflect.Value, n int, err error) {
-	retval := make(map[interface{}]interface{})
-	nbytesread := 0
 	var i uint
+	var nbytesread int
+	var k reflect.Value
+	retval := make(map[interface{}]interface{})
+
 	for i = 0; i < nelems; i++ {
-		k, n, e := Unpack(reader)
+		k, n, err = Unpack(reader)
 		nbytesread += n
-		if e != nil {
-			return reflect.Value{}, nbytesread, e
+		if err != nil {
+			return reflect.Value{}, nbytesread, err
 		}
-		v, n, e := Unpack(reader)
+		v, n, err = Unpack(reader)
 		nbytesread += n
-		if e != nil {
-			return reflect.Value{}, nbytesread, e
+		if err != nil {
+			return reflect.Value{}, nbytesread, err
 		}
 		ktyp := k.Type()
 		if ktyp.Kind() == reflect.Slice && ktyp.Elem().Kind() == reflect.Uint8 {
@@ -126,60 +145,72 @@ func unpackMap(reader io.Reader, nelems uint) (v reflect.Value, n int, err error
 }
 
 func unpackMapReflected(reader io.Reader, nelems uint) (v reflect.Value, n int, err error) {
-	retval := make(map[interface{}]reflect.Value)
-	nbytesread := 0
 	var i uint
+	var nbytesread int
+	var k reflect.Value
+	retval := make(map[interface{}]reflect.Value)
+
 	for i = 0; i < nelems; i++ {
-		k, n, e := UnpackReflected(reader)
+		k, n, err = UnpackReflected(reader)
 		nbytesread += n
-		if e != nil {
-			return reflect.Value{}, nbytesread, e
+		if err != nil {
+			return reflect.Value{}, nbytesread, err
 		}
-		v, n, e := UnpackReflected(reader)
+		v, n, err = UnpackReflected(reader)
 		nbytesread += n
-		if e != nil {
-			return reflect.Value{}, nbytesread, e
+		if err != nil {
+			return reflect.Value{}, nbytesread, err
 		}
 		retval[k] = v
 	}
 	return reflect.ValueOf(retval), nbytesread, nil
 }
 
+// Get the four lowest bits
+func lownibble(u8 uint8) uint {
+	return uint(u8 & 0xf)
+}
+
+// Get the five lowest bits
+func lowfive(u8 uint8) uint {
+	return uint(u8 & 0x1f)
+}
+
 func unpack(reader io.Reader, reflected bool) (v reflect.Value, n int, err error) {
 	var retval reflect.Value
-	var nbytesread int = 0
+	var nbytesread int
 
 	c, e := readByte(reader)
 	if e != nil {
 		return reflect.Value{}, 0, e
 	}
-	nbytesread += 1
-	if c < 0x80 || c >= 0xe0 {
+	nbytesread++
+	if c < FIXMAP || c >= NEGFIXNUM {
 		retval = reflect.ValueOf(int8(c))
-	} else if c >= 0x80 && c <= 0x8f {
+	} else if c >= FIXMAP && c <= FIXMAPMAX {
 		if reflected {
-			retval, n, e = unpackMapReflected(reader, uint(c&0xf))
+			retval, n, e = unpackMapReflected(reader, lownibble(c))
 		} else {
-			retval, n, e = unpackMap(reader, uint(c&0xf))
+			retval, n, e = unpackMap(reader, lownibble(c))
 		}
 		nbytesread += n
 		if e != nil {
 			return reflect.Value{}, nbytesread, e
 		}
 		nbytesread += n
-	} else if c >= 0x90 && c <= 0x9f {
+	} else if c >= FIXARRAY && c <= FIXARRAYMAX {
 		if reflected {
-			retval, n, e = unpackArrayReflected(reader, uint(c&0xf))
+			retval, n, e = unpackArrayReflected(reader, lownibble(c))
 		} else {
-			retval, n, e = unpackArray(reader, uint(c&0xf))
+			retval, n, e = unpackArray(reader, lownibble(c))
 		}
 		nbytesread += n
 		if e != nil {
 			return reflect.Value{}, nbytesread, e
 		}
 		nbytesread += n
-	} else if c >= 0xa0 && c <= 0xbf {
-		data := make([]byte, c&0x1f)
+	} else if c >= FIXRAW && c <= FIXRAWMAX {
+		data := make([]byte, lowfive(c))
 		n, e := reader.Read(data)
 		nbytesread += n
 		if e != nil {
@@ -188,83 +219,83 @@ func unpack(reader io.Reader, reflected bool) (v reflect.Value, n int, err error
 		retval = reflect.ValueOf(data)
 	} else {
 		switch c {
-		case 0xc0:
+		case NIL:
 			retval = reflect.ValueOf(nil)
-		case 0xc2:
+		case FALSE:
 			retval = reflect.ValueOf(false)
-		case 0xc3:
+		case TRUE:
 			retval = reflect.ValueOf(true)
-		case 0xca:
+		case FLOAT:
 			data, n, e := readUint32(reader)
 			nbytesread += n
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
 			retval = reflect.ValueOf(*(*float32)(unsafe.Pointer(&data)))
-		case 0xcb:
+		case DOUBLE:
 			data, n, e := readUint64(reader)
 			nbytesread += n
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
 			retval = reflect.ValueOf(*(*float64)(unsafe.Pointer(&data)))
-		case 0xcc:
+		case UINT8:
 			data, e := readByte(reader)
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
 			retval = reflect.ValueOf(uint8(data))
-			nbytesread += 1
-		case 0xcd:
+			nbytesread++
+		case UINT16:
 			data, n, e := readUint16(reader)
 			nbytesread += n
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
 			retval = reflect.ValueOf(data)
-		case 0xce:
+		case UINT32:
 			data, n, e := readUint32(reader)
 			nbytesread += n
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
 			retval = reflect.ValueOf(data)
-		case 0xcf:
+		case UINT64:
 			data, n, e := readUint64(reader)
 			nbytesread += n
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
 			retval = reflect.ValueOf(data)
-		case 0xd0:
+		case INT8:
 			data, e := readByte(reader)
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
 			retval = reflect.ValueOf(int8(data))
-			nbytesread += 1
-		case 0xd1:
+			nbytesread++
+		case INT16:
 			data, n, e := readInt16(reader)
 			nbytesread += n
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
 			retval = reflect.ValueOf(data)
-		case 0xd2:
+		case INT32:
 			data, n, e := readInt32(reader)
 			nbytesread += n
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
 			retval = reflect.ValueOf(data)
-		case 0xd3:
+		case INT64:
 			data, n, e := readInt64(reader)
 			nbytesread += n
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
 			retval = reflect.ValueOf(data)
-		case 0xda:
+		case RAW16:
 			nbytestoread, n, e := readUint16(reader)
 			nbytesread += n
 			if e != nil {
@@ -277,20 +308,20 @@ func unpack(reader io.Reader, reflected bool) (v reflect.Value, n int, err error
 				return reflect.Value{}, nbytesread, e
 			}
 			retval = reflect.ValueOf(data)
-		case 0xdb:
+		case RAW32:
 			nbytestoread, n, e := readUint32(reader)
 			nbytesread += n
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
-			data := make([]byte, nbytestoread)
+			data := make(Bytes, nbytestoread)
 			n, e = reader.Read(data)
 			nbytesread += n
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
 			retval = reflect.ValueOf(data)
-		case 0xdc:
+		case ARRAY16:
 			nelemstoread, n, e := readUint16(reader)
 			nbytesread += n
 			if e != nil {
@@ -305,7 +336,7 @@ func unpack(reader io.Reader, reflected bool) (v reflect.Value, n int, err error
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
-		case 0xdd:
+		case ARRAY32:
 			nelemstoread, n, e := readUint32(reader)
 			nbytesread += n
 			if e != nil {
@@ -320,7 +351,7 @@ func unpack(reader io.Reader, reflected bool) (v reflect.Value, n int, err error
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
-		case 0xde:
+		case MAP16:
 			nelemstoread, n, e := readUint16(reader)
 			nbytesread += n
 			if e != nil {
@@ -335,7 +366,7 @@ func unpack(reader io.Reader, reflected bool) (v reflect.Value, n int, err error
 			if e != nil {
 				return reflect.Value{}, nbytesread, e
 			}
-		case 0xdf:
+		case MAP32:
 			nelemstoread, n, e := readUint32(reader)
 			nbytesread += n
 			if e != nil {

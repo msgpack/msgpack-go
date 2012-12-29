@@ -7,56 +7,99 @@ import (
 	"unsafe"
 )
 
+const (
+	NIL = 0xc0
+
+	FALSE = 0xc2
+	TRUE  = 0xc3
+
+	FLOAT  = 0xca
+	DOUBLE = 0xcb
+
+	UINT8  = 0xcc
+	UINT16 = 0xcd
+	UINT32 = 0xce
+	UINT64 = 0xcf
+	INT8   = 0xd0
+	INT16  = 0xd1
+	INT32  = 0xd2
+	INT64  = 0xd3
+
+	RAW16   = 0xda
+	RAW32   = 0xdb
+	ARRAY16 = 0xdc
+	ARRAY32 = 0xdd
+	MAP16   = 0xde
+	MAP32   = 0xdf
+
+	FIXMAP   = 0x80
+	FIXARRAY = 0x90
+	FIXRAW   = 0xa0
+
+	MAXFIXMAP   = 16
+	MAXFIXARRAY = 16
+	MAXFIXRAW   = 32
+
+	LEN_INT32 = 4
+	LEN_INT64 = 8
+
+	MAX16BIT = 2 << (16 - 1)
+
+	REGULAR_UINT7_MAX  = 2 << (7 - 1)
+	REGULAR_UINT8_MAX  = 2 << (8 - 1)
+	REGULAR_UINT16_MAX = 2 << (16 - 1)
+	REGULAR_UINT32_MAX = 2 << (32 - 1)
+
+	SPECIAL_INT8  = 32
+	SPECIAL_INT16 = 2 << (8 - 2)
+	SPECIAL_INT32 = 2 << (16 - 2)
+	SPECIAL_INT64 = 2 << (32 - 2)
+)
+
+type Bytes []byte
+
 // Packs a given value and writes it into the specified writer.
 func PackUint8(writer io.Writer, value uint8) (n int, err error) {
-	if value < 128 {
-		return writer.Write([]byte{byte(value)})
+	// Assume the numbers outside of range is the least common case
+	if value >= REGULAR_UINT7_MAX {
+		return writer.Write(Bytes{UINT8, value})
 	}
-	return writer.Write([]byte{0xcc, byte(value)})
+	return writer.Write(Bytes{value})
 }
 
 // Packs a given value and writes it into the specified writer.
 func PackUint16(writer io.Writer, value uint16) (n int, err error) {
-	if value < 128 {
-		return writer.Write([]byte{byte(value)})
-	} else if value < 256 {
-		return writer.Write([]byte{0xcc, byte(value)})
+	// Assume the numbers outside of range is the least common case
+	if value >= REGULAR_UINT8_MAX {
+		return writer.Write(Bytes{UINT16, byte(value >> 8), byte(value)})
 	}
-	return writer.Write([]byte{0xcd, byte(value >> 8), byte(value)})
+	return PackUint8(writer, uint8(value))
 }
 
 // Packs a given value and writes it into the specified writer.
 func PackUint32(writer io.Writer, value uint32) (n int, err error) {
-	if value < 128 {
-		return writer.Write([]byte{byte(value)})
-	} else if value < 256 {
-		return writer.Write([]byte{0xcc, byte(value)})
-	} else if value < 65536 {
-		return writer.Write([]byte{0xcd, byte(value >> 8), byte(value)})
+	// Assume the numbers outside of range is the least common case
+	if value >= REGULAR_UINT16_MAX {
+		return writer.Write(Bytes{UINT32, byte(value >> 24), byte(value >> 16), byte(value >> 8), byte(value)})
 	}
-	return writer.Write([]byte{0xce, byte(value >> 24), byte(value >> 16), byte(value >> 8), byte(value)})
+	return PackUint16(writer, uint16(value))
 }
 
 // Packs a given value and writes it into the specified writer.
 func PackUint64(writer io.Writer, value uint64) (n int, err error) {
-	if value < 128 {
-		return writer.Write([]byte{byte(value)})
-	} else if value < 256 {
-		return writer.Write([]byte{0xcc, byte(value)})
-	} else if value < 65536 {
-		return writer.Write([]byte{0xcd, byte(value >> 8), byte(value)})
-	} else if value < 4294967296 {
-		return writer.Write([]byte{0xce, byte(value >> 24), byte(value >> 16), byte(value >> 8), byte(value)})
+	// Assume the numbers outside of range is the least common case
+	if value >= REGULAR_UINT32_MAX {
+		return writer.Write(Bytes{UINT64, byte(value >> 56), byte(value >> 48), byte(value >> 40), byte(value >> 32), byte(value >> 24), byte(value >> 16), byte(value >> 8), byte(value)})
 	}
-	return writer.Write([]byte{0xcf, byte(value >> 56), byte(value >> 48), byte(value >> 40), byte(value >> 32), byte(value >> 24), byte(value >> 16), byte(value >> 8), byte(value)})
+	return PackUint32(writer, uint32(value))
 }
 
+// Packs a given value and writes it into the specified writer.
 func PackUint(writer io.Writer, value uint) (n int, err error) {
-	// Packs a given value and writes it into the specified writer.
 	switch unsafe.Sizeof(value) {
-	case 4:
+	case LEN_INT32:
 		return PackUint32(writer, *(*uint32)(unsafe.Pointer(&value)))
-	case 8:
+	case LEN_INT64:
 		return PackUint64(writer, *(*uint64)(unsafe.Pointer(&value)))
 	}
 	return 0, os.ErrNotExist // never get here
@@ -64,56 +107,46 @@ func PackUint(writer io.Writer, value uint) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackInt8(writer io.Writer, value int8) (n int, err error) {
-	if value < -32 {
-		return writer.Write([]byte{0xd0, byte(value)})
+	// Assume the numbers outside of range is the least common case
+	if value < -SPECIAL_INT8 {
+		return writer.Write(Bytes{INT8, byte(value)})
 	}
-	return writer.Write([]byte{byte(value)})
+	return writer.Write(Bytes{byte(value)})
 }
 
 // Packs a given value and writes it into the specified writer.
 func PackInt16(writer io.Writer, value int16) (n int, err error) {
-	if value < -128 || value >= 128 {
-		return writer.Write([]byte{0xd1, byte(uint16(value) >> 8), byte(value)})
-	} else if value < -32 {
-		return writer.Write([]byte{0xd0, byte(value)})
+	// Assume the numbers outside of range is the least common case
+	if value < -SPECIAL_INT16 || value >= SPECIAL_INT16 {
+		return writer.Write(Bytes{INT16, byte(uint16(value) >> 8), byte(value)})
 	}
-	return writer.Write([]byte{byte(value)})
+	return PackInt8(writer, int8(value))
 }
 
 // Packs a given value and writes it into the specified writer.
 func PackInt32(writer io.Writer, value int32) (n int, err error) {
-	if value < -32768 || value >= 32768 {
-		return writer.Write([]byte{0xd2, byte(uint32(value) >> 24), byte(uint32(value) >> 16), byte(uint32(value) >> 8), byte(value)})
-	} else if value < -128 {
-		return writer.Write([]byte{0xd1, byte(uint32(value) >> 8), byte(value)})
-	} else if value < -32 {
-		return writer.Write([]byte{0xd0, byte(value)})
-	} else if value >= 128 {
-		return writer.Write([]byte{0xd1, byte(uint32(value) >> 8), byte(value)})
+	// Assume the numbers outside of range is the least common case
+	if value < -SPECIAL_INT32 || value >= SPECIAL_INT32 {
+		return writer.Write(Bytes{INT32, byte(uint32(value) >> 24), byte(uint32(value) >> 16), byte(uint32(value) >> 8), byte(value)})
 	}
-	return writer.Write([]byte{byte(value)})
+	return PackInt16(writer, int16(value))
 }
 
 // Packs a given value and writes it into the specified writer.
 func PackInt64(writer io.Writer, value int64) (n int, err error) {
-	if value < -2147483648 || value >= 2147483648 {
-		return writer.Write([]byte{0xd3, byte(uint64(value) >> 56), byte(uint64(value) >> 48), byte(uint64(value) >> 40), byte(uint64(value) >> 32), byte(uint64(value) >> 24), byte(uint64(value) >> 16), byte(uint64(value) >> 8), byte(value)})
-	} else if value < -32768 || value >= 32768 {
-		return writer.Write([]byte{0xd2, byte(uint64(value) >> 24), byte(uint64(value) >> 16), byte(uint64(value) >> 8), byte(value)})
-	} else if value < -128 || value >= 128 {
-		return writer.Write([]byte{0xd1, byte(uint64(value) >> 8), byte(value)})
-	} else if value < -32 {
-		return writer.Write([]byte{0xd0, byte(value)})
+	// Assume the numbers outside of range is the least common case
+	if value < -SPECIAL_INT64 || value >= SPECIAL_INT64 {
+		return writer.Write(Bytes{INT64, byte(uint64(value) >> 56), byte(uint64(value) >> 48), byte(uint64(value) >> 40), byte(uint64(value) >> 32), byte(uint64(value) >> 24), byte(uint64(value) >> 16), byte(uint64(value) >> 8), byte(value)})
 	}
-	return writer.Write([]byte{byte(value)})
+	return PackInt32(writer, int32(value))
 }
 
 // Packs a given value and writes it into the specified writer.
 func PackInt(writer io.Writer, value int) (n int, err error) {
 	switch unsafe.Sizeof(value) {
-	case 4:
+	case LEN_INT32:
 		return PackInt32(writer, *(*int32)(unsafe.Pointer(&value)))
-	case 8:
+	case LEN_INT64:
 		return PackInt64(writer, *(*int64)(unsafe.Pointer(&value)))
 	}
 	return 0, os.ErrNotExist // never get here
@@ -121,18 +154,15 @@ func PackInt(writer io.Writer, value int) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackNil(writer io.Writer) (n int, err error) {
-	return writer.Write([]byte{0xc0})
+	return writer.Write(Bytes{NIL})
 }
 
 // Packs a given value and writes it into the specified writer.
 func PackBool(writer io.Writer, value bool) (n int, err error) {
-	var code byte
 	if value {
-		code = 0xc3
-	} else {
-		code = 0xc2
+		return writer.Write(Bytes{TRUE})
 	}
-	return writer.Write([]byte{code})
+	return writer.Write(Bytes{FALSE})
 }
 
 // Packs a given value and writes it into the specified writer.
@@ -147,22 +177,23 @@ func PackFloat64(writer io.Writer, value float64) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackBytes(writer io.Writer, value []byte) (n int, err error) {
-	if len(value) < 32 {
-		n1, err := writer.Write([]byte{0xa0 | uint8(len(value))})
+	length := len(value)
+	if length < MAXFIXRAW {
+		n1, err := writer.Write(Bytes{FIXRAW | uint8(length)})
 		if err != nil {
 			return n1, err
 		}
 		n2, err := writer.Write(value)
 		return n1 + n2, err
-	} else if len(value) < 65536 {
-		n1, err := writer.Write([]byte{0xda, byte(len(value) >> 16), byte(len(value))})
+	} else if length < MAX16BIT {
+		n1, err := writer.Write(Bytes{RAW16, byte(length >> 16), byte(length)})
 		if err != nil {
 			return n1, err
 		}
 		n2, err := writer.Write(value)
 		return n1 + n2, err
 	}
-	n1, err := writer.Write([]byte{0xdb, byte(len(value) >> 24), byte(len(value) >> 16), byte(len(value) >> 8), byte(len(value))})
+	n1, err := writer.Write(Bytes{RAW32, byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
 	if err != nil {
 		return n1, err
 	}
@@ -172,8 +203,9 @@ func PackBytes(writer io.Writer, value []byte) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackUint16Array(writer io.Writer, value []uint16) (n int, err error) {
-	if len(value) < 16 {
-		n, err := writer.Write([]byte{0x90 | byte(len(value))})
+	length := len(value)
+	if length < MAXFIXARRAY {
+		n, err := writer.Write(Bytes{FIXARRAY | byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -184,8 +216,8 @@ func PackUint16Array(writer io.Writer, value []uint16) (n int, err error) {
 			}
 			n += _n
 		}
-	} else if len(value) < 65536 {
-		n, err := writer.Write([]byte{0xdc, byte(len(value) >> 8), byte(len(value))})
+	} else if length < MAX16BIT {
+		n, err := writer.Write(Bytes{ARRAY16, byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -197,7 +229,7 @@ func PackUint16Array(writer io.Writer, value []uint16) (n int, err error) {
 			n += _n
 		}
 	} else {
-		n, err := writer.Write([]byte{0xdd, byte(len(value) >> 24), byte(len(value) >> 16), byte(len(value) >> 8), byte(len(value))})
+		n, err := writer.Write(Bytes{ARRAY32, byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -214,8 +246,9 @@ func PackUint16Array(writer io.Writer, value []uint16) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackUint32Array(writer io.Writer, value []uint32) (n int, err error) {
-	if len(value) < 16 {
-		n, err := writer.Write([]byte{0x90 | byte(len(value))})
+	length := len(value)
+	if length < MAXFIXARRAY {
+		n, err := writer.Write(Bytes{FIXARRAY | byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -226,8 +259,8 @@ func PackUint32Array(writer io.Writer, value []uint32) (n int, err error) {
 			}
 			n += _n
 		}
-	} else if len(value) < 65536 {
-		n, err := writer.Write([]byte{0xdc, byte(len(value) >> 8), byte(len(value))})
+	} else if length < MAX16BIT {
+		n, err := writer.Write(Bytes{ARRAY16, byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -239,7 +272,7 @@ func PackUint32Array(writer io.Writer, value []uint32) (n int, err error) {
 			n += _n
 		}
 	} else {
-		n, err := writer.Write([]byte{0xdd, byte(len(value) >> 24), byte(len(value) >> 16), byte(len(value) >> 8), byte(len(value))})
+		n, err := writer.Write(Bytes{ARRAY32, byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -256,8 +289,9 @@ func PackUint32Array(writer io.Writer, value []uint32) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackUint64Array(writer io.Writer, value []uint64) (n int, err error) {
-	if len(value) < 16 {
-		n, err := writer.Write([]byte{0x90 | byte(len(value))})
+	length := len(value)
+	if length < MAXFIXARRAY {
+		n, err := writer.Write(Bytes{FIXARRAY | byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -268,8 +302,8 @@ func PackUint64Array(writer io.Writer, value []uint64) (n int, err error) {
 			}
 			n += _n
 		}
-	} else if len(value) < 65536 {
-		n, err := writer.Write([]byte{0xdc, byte(len(value) >> 8), byte(len(value))})
+	} else if length < MAX16BIT {
+		n, err := writer.Write(Bytes{ARRAY16, byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -281,7 +315,7 @@ func PackUint64Array(writer io.Writer, value []uint64) (n int, err error) {
 			n += _n
 		}
 	} else {
-		n, err := writer.Write([]byte{0xdd, byte(len(value) >> 24), byte(len(value) >> 16), byte(len(value) >> 8), byte(len(value))})
+		n, err := writer.Write(Bytes{ARRAY32, byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -309,8 +343,9 @@ func PackUintArray(writer io.Writer, value []uint) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackInt8Array(writer io.Writer, value []int8) (n int, err error) {
-	if len(value) < 16 {
-		n, err := writer.Write([]byte{0x90 | byte(len(value))})
+	length := len(value)
+	if length < MAXFIXARRAY {
+		n, err := writer.Write(Bytes{FIXARRAY | byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -321,8 +356,8 @@ func PackInt8Array(writer io.Writer, value []int8) (n int, err error) {
 			}
 			n += _n
 		}
-	} else if len(value) < 65536 {
-		n, err := writer.Write([]byte{0xdc, byte(len(value) >> 8), byte(len(value))})
+	} else if length < MAX16BIT {
+		n, err := writer.Write(Bytes{ARRAY16, byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -334,7 +369,7 @@ func PackInt8Array(writer io.Writer, value []int8) (n int, err error) {
 			n += _n
 		}
 	} else {
-		n, err := writer.Write([]byte{0xdd, byte(len(value) >> 24), byte(len(value) >> 16), byte(len(value) >> 8), byte(len(value))})
+		n, err := writer.Write(Bytes{ARRAY32, byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -351,8 +386,9 @@ func PackInt8Array(writer io.Writer, value []int8) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackInt16Array(writer io.Writer, value []int16) (n int, err error) {
-	if len(value) < 16 {
-		n, err := writer.Write([]byte{0x90 | byte(len(value))})
+	length := len(value)
+	if length < MAXFIXARRAY {
+		n, err := writer.Write(Bytes{FIXARRAY | byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -363,8 +399,8 @@ func PackInt16Array(writer io.Writer, value []int16) (n int, err error) {
 			}
 			n += _n
 		}
-	} else if len(value) < 65536 {
-		n, err := writer.Write([]byte{0xdc, byte(len(value) >> 8), byte(len(value))})
+	} else if length < MAX16BIT {
+		n, err := writer.Write(Bytes{ARRAY16, byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -376,7 +412,7 @@ func PackInt16Array(writer io.Writer, value []int16) (n int, err error) {
 			n += _n
 		}
 	} else {
-		n, err := writer.Write([]byte{0xdd, byte(len(value) >> 24), byte(len(value) >> 16), byte(len(value) >> 8), byte(len(value))})
+		n, err := writer.Write(Bytes{ARRAY32, byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -393,8 +429,9 @@ func PackInt16Array(writer io.Writer, value []int16) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackInt32Array(writer io.Writer, value []int32) (n int, err error) {
-	if len(value) < 16 {
-		n, err := writer.Write([]byte{0x90 | byte(len(value))})
+	length := len(value)
+	if length < MAXFIXARRAY {
+		n, err := writer.Write(Bytes{FIXARRAY | byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -405,8 +442,8 @@ func PackInt32Array(writer io.Writer, value []int32) (n int, err error) {
 			}
 			n += _n
 		}
-	} else if len(value) < 65536 {
-		n, err := writer.Write([]byte{0xdc, byte(len(value) >> 8), byte(len(value))})
+	} else if length < MAX16BIT {
+		n, err := writer.Write(Bytes{ARRAY16, byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -418,7 +455,7 @@ func PackInt32Array(writer io.Writer, value []int32) (n int, err error) {
 			n += _n
 		}
 	} else {
-		n, err := writer.Write([]byte{0xdd, byte(len(value) >> 24), byte(len(value) >> 16), byte(len(value) >> 8), byte(len(value))})
+		n, err := writer.Write(Bytes{ARRAY32, byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -435,8 +472,9 @@ func PackInt32Array(writer io.Writer, value []int32) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackInt64Array(writer io.Writer, value []int64) (n int, err error) {
-	if len(value) < 16 {
-		n, err := writer.Write([]byte{0x90 | byte(len(value))})
+	length := len(value)
+	if length < MAXFIXARRAY {
+		n, err := writer.Write(Bytes{FIXARRAY | byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -447,8 +485,8 @@ func PackInt64Array(writer io.Writer, value []int64) (n int, err error) {
 			}
 			n += _n
 		}
-	} else if len(value) < 65536 {
-		n, err := writer.Write([]byte{0xdc, byte(len(value) >> 8), byte(len(value))})
+	} else if length < MAX16BIT {
+		n, err := writer.Write(Bytes{ARRAY16, byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -460,7 +498,7 @@ func PackInt64Array(writer io.Writer, value []int64) (n int, err error) {
 			n += _n
 		}
 	} else {
-		n, err := writer.Write([]byte{0xdd, byte(len(value) >> 24), byte(len(value) >> 16), byte(len(value) >> 8), byte(len(value))})
+		n, err := writer.Write(Bytes{ARRAY32, byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -478,9 +516,9 @@ func PackInt64Array(writer io.Writer, value []int64) (n int, err error) {
 // Packs a given value and writes it into the specified writer.
 func PackIntArray(writer io.Writer, value []int) (n int, err error) {
 	switch unsafe.Sizeof(0) {
-	case 4:
+	case LEN_INT32:
 		return PackInt32Array(writer, *(*[]int32)(unsafe.Pointer(&value)))
-	case 8:
+	case LEN_INT64:
 		return PackInt64Array(writer, *(*[]int64)(unsafe.Pointer(&value)))
 	}
 	return 0, os.ErrNotExist // never get here
@@ -488,8 +526,9 @@ func PackIntArray(writer io.Writer, value []int) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackFloat32Array(writer io.Writer, value []float32) (n int, err error) {
-	if len(value) < 16 {
-		n, err := writer.Write([]byte{0x90 | byte(len(value))})
+	length := len(value)
+	if length < MAXFIXARRAY {
+		n, err := writer.Write(Bytes{FIXARRAY | byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -500,8 +539,8 @@ func PackFloat32Array(writer io.Writer, value []float32) (n int, err error) {
 			}
 			n += _n
 		}
-	} else if len(value) < 65536 {
-		n, err := writer.Write([]byte{0xdc, byte(len(value) >> 8), byte(len(value))})
+	} else if length < MAX16BIT {
+		n, err := writer.Write(Bytes{ARRAY16, byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -513,7 +552,7 @@ func PackFloat32Array(writer io.Writer, value []float32) (n int, err error) {
 			n += _n
 		}
 	} else {
-		n, err := writer.Write([]byte{0xdd, byte(len(value) >> 24), byte(len(value) >> 16), byte(len(value) >> 8), byte(len(value))})
+		n, err := writer.Write(Bytes{ARRAY32, byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -530,8 +569,9 @@ func PackFloat32Array(writer io.Writer, value []float32) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackFloat64Array(writer io.Writer, value []float64) (n int, err error) {
-	if len(value) < 16 {
-		n, err := writer.Write([]byte{0x90 | byte(len(value))})
+	length := len(value)
+	if length < MAXFIXARRAY {
+		n, err := writer.Write(Bytes{FIXARRAY | byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -542,8 +582,8 @@ func PackFloat64Array(writer io.Writer, value []float64) (n int, err error) {
 			}
 			n += _n
 		}
-	} else if len(value) < 65536 {
-		n, err := writer.Write([]byte{0xdc, byte(len(value) >> 8), byte(len(value))})
+	} else if length < MAX16BIT {
+		n, err := writer.Write(Bytes{ARRAY16, byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -555,7 +595,7 @@ func PackFloat64Array(writer io.Writer, value []float64) (n int, err error) {
 			n += _n
 		}
 	} else {
-		n, err := writer.Write([]byte{0xdd, byte(len(value) >> 24), byte(len(value) >> 16), byte(len(value) >> 8), byte(len(value))})
+		n, err := writer.Write(Bytes{ARRAY32, byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -580,25 +620,25 @@ func PackArray(writer io.Writer, value reflect.Value) (n int, err error) {
 		}
 	}
 
-	l := value.Len()
-	if l < 16 {
-		n, err := writer.Write([]byte{0x90 | byte(l)})
+	length := value.Len()
+	if length < MAXFIXARRAY {
+		n, err := writer.Write(Bytes{FIXARRAY | byte(length)})
 		if err != nil {
 			return n, err
 		}
-		for i := 0; i < l; i++ {
+		for i := 0; i < length; i++ {
 			_n, err := PackValue(writer, value.Index(i))
 			if err != nil {
 				return n, err
 			}
 			n += _n
 		}
-	} else if l < 65536 {
-		n, err := writer.Write([]byte{0xdc, byte(l >> 8), byte(l)})
+	} else if length < MAX16BIT {
+		n, err := writer.Write(Bytes{ARRAY16, byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
-		for i := 0; i < l; i++ {
+		for i := 0; i < length; i++ {
 			_n, err := PackValue(writer, value.Index(i))
 			if err != nil {
 				return n, err
@@ -606,11 +646,11 @@ func PackArray(writer io.Writer, value reflect.Value) (n int, err error) {
 			n += _n
 		}
 	} else {
-		n, err := writer.Write([]byte{0xdd, byte(l >> 24), byte(l >> 16), byte(l >> 8), byte(l)})
+		n, err := writer.Write(Bytes{ARRAY32, byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
-		for i := 0; i < l; i++ {
+		for i := 0; i < length; i++ {
 			_n, err := PackValue(writer, value.Index(i))
 			if err != nil {
 				return n, err
@@ -624,8 +664,9 @@ func PackArray(writer io.Writer, value reflect.Value) (n int, err error) {
 // Packs a given value and writes it into the specified writer.
 func PackMap(writer io.Writer, value reflect.Value) (n int, err error) {
 	keys := value.MapKeys()
-	if value.Len() < 16 {
-		n, err := writer.Write([]byte{0x80 | byte(len(keys))})
+	length := len(keys)
+	if length < MAXFIXMAP {
+		n, err := writer.Write(Bytes{FIXMAP | byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -641,8 +682,8 @@ func PackMap(writer io.Writer, value reflect.Value) (n int, err error) {
 			}
 			n += _n
 		}
-	} else if value.Len() < 65536 {
-		n, err := writer.Write([]byte{0xde, byte(len(keys) >> 8), byte(len(keys))})
+	} else if length < MAX16BIT {
+		n, err := writer.Write(Bytes{MAP16, byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -659,7 +700,7 @@ func PackMap(writer io.Writer, value reflect.Value) (n int, err error) {
 			n += _n
 		}
 	} else {
-		n, err := writer.Write([]byte{0xdf, byte(len(keys) >> 24), byte(len(keys) >> 16), byte(len(keys) >> 8), byte(len(keys))})
+		n, err := writer.Write(Bytes{MAP32, byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
 		if err != nil {
 			return n, err
 		}
@@ -768,7 +809,7 @@ func Pack(writer io.Writer, value interface{}) (n int, err error) {
 	case []float64:
 		return PackFloat64Array(writer, _value)
 	case string:
-		return PackBytes(writer, []byte(_value))
+		return PackBytes(writer, Bytes(_value))
 	default:
 		return PackValue(writer, reflect.ValueOf(value))
 	}
