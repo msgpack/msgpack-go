@@ -2,4 +2,6 @@ This builds with the new 'go' tool.
 
 It is installable with "go get github.com/msgpack/msgpack-go".
 
-FYI, [go-msgpack](https://github.com/ugorji/go) contains a better msgpack implementation for go.
+FYI, these libraries contains a better msgpack implementation for go:
+ - [msgp](https://github.com/tinylib/msgp)
+ - [go-msgpack](https://github.com/ugorji/go)
