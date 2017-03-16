@@ -186,7 +186,7 @@ func PackBytes(writer io.Writer, value []byte) (n int, err error) {
 		n2, err := writer.Write(value)
 		return n1 + n2, err
 	} else if length < MAX16BIT {
-		n1, err := writer.Write(Bytes{RAW16, byte(length >> 16), byte(length)})
+		n1, err := writer.Write(Bytes{RAW16, byte(length >> 8), byte(length)})
 		if err != nil {
 			return n1, err
 		}
