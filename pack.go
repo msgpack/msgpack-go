@@ -167,12 +167,14 @@ func PackBool(writer io.Writer, value bool) (n int, err error) {
 
 // Packs a given value and writes it into the specified writer.
 func PackFloat32(writer io.Writer, value float32) (n int, err error) {
-	return PackUint32(writer, *(*uint32)(unsafe.Pointer(&value)))
+	_value := *(*uint32)(unsafe.Pointer(&value))
+	return writer.Write(Bytes{FLOAT, byte(_value >> 24), byte(_value >> 16), byte(_value >> 8), byte(_value)})
 }
 
 // Packs a given value and writes it into the specified writer.
 func PackFloat64(writer io.Writer, value float64) (n int, err error) {
-	return PackUint64(writer, *(*uint64)(unsafe.Pointer(&value)))
+	_value := *(*uint64)(unsafe.Pointer(&value))
+	return writer.Write(Bytes{DOUBLE, byte(_value >> 56), byte(_value >> 48), byte(_value >> 40), byte(_value >> 32), byte(_value >> 24), byte(_value >> 16), byte(_value >> 8), byte(_value)})
 }
 
 // Packs a given value and writes it into the specified writer.
